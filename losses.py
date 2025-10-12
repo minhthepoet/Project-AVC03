@@ -1,4 +1,4 @@
-# losses.py
+# losses.py by minhthepoet
 import torch
 import torch.nn as nn
 
