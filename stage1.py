@@ -1,7 +1,7 @@
 # =============================================================
 # SwiftEdit — Stage 1 By minhthepoet
 # =============================================================
-
+import argparse
 import os, json, time, random
 import torch
 import torch.nn as nn
@@ -15,26 +15,49 @@ from transformers import (
 from model import InverseModel, IPSBV2Model, ImageProjModel
 from losses import compute_stage1_losses
 
-
 # =============================================================
-# Config
+# Config (Argparse version)
 # =============================================================
 
-PROMPT_FILE = "journeydb_cache/journey_prompts.txt"
-SBV2_DIR = "swiftbrushV2"
-SAVE_DIR = "checkpoints_stage1"
+parser = argparse.ArgumentParser(description="SwiftEdit Stage 1 Training")
+parser.add_argument("--model_path", type=str, default="swiftbrushV2", help="Path to SwiftBrushV2 folder")
+parser.add_argument("--prompt_file", type=str, default="journeydb_cache/journey_prompts.txt", help="Path to prompt list")
+parser.add_argument("--save_dir", type=str, default="checkpoints_stage1", help="Folder to save checkpoints")
+parser.add_argument("--total_steps", type=int, default=2000)
+parser.add_argument("--batch_size", type=int, default=4)
+parser.add_argument("--lr", type=float, default=1e-5)
+parser.add_argument("--wd", type=float, default=1e-4)
+parser.add_argument("--lambda_regr", type=float, default=1.0)
+parser.add_argument("--ema", type=float, default=0.999)
+parser.add_argument("--seed", type=int, default=1337)
+parser.add_argument("--dtype", type=str, default="bf16", choices=["bf16", "fp16", "fp32"])
+args = parser.parse_args()
+
+# Assign configs
+PROMPT_FILE = args.prompt_file
+SBV2_DIR = args.model_path
+SAVE_DIR = args.save_dir
+TOTAL_STEPS = args.total_steps
+BATCH_SIZE = args.batch_size
+LR = args.lr
+WD = args.wd
+LAMBDA = args.lambda_regr
+EMA_DECAY = args.ema
+SEED = args.seed
+
+# Device + dtype
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if args.dtype == "bf16":
+    DTYPE = torch.bfloat16
+elif args.dtype == "fp16":
+    DTYPE = torch.float16
+else:
+    DTYPE = torch.float32
+
+# Constants
+VAE_SCALE = 0.18215
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-DTYPE  = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-VAE_SCALE = 0.18215
-TOTAL_STEPS = 2000
-BATCH_SIZE = 4
-LR = 1e-5
-WD = 1e-4
-LAMBDA = 1.0
-EMA_DECAY = 0.999
-SEED = 1337
 
 
 # =============================================================
