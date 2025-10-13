@@ -16,7 +16,7 @@ from model import InverseModel, IPSBV2Model, ImageProjModel
 from losses import compute_stage1_losses
 
 # =============================================================
-# Config (Argparse version)
+# Config 
 # =============================================================
 
 parser = argparse.ArgumentParser(description="SwiftEdit Stage 1 Training")
