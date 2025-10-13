@@ -13,7 +13,7 @@ from transformers import (
     CLIPVisionModel, CLIPImageProcessor,
 )
 from model import InverseModel, IPSBV2Model, ImageProjModel
-from losses import compute_stage1_losses
+from losses import stage1_loss
 
 # =============================================================
 # Config 
@@ -169,7 +169,7 @@ def train_step(inverse_net, ip_model, g_ip, optimizer, batch, lambda_regr, devic
     img_proj = ip_model(img_feats)
     t = torch.full((z.size(0),), 999, device=device, dtype=torch.long)
     z_hat = g_ip.unet(eps_hat, t, encoder_hidden_states=torch.cat([text_emb, img_proj], dim=1)).sample
-    L_rec, L_regr, L_total = compute_stage1_losses(z, z_hat, eps, eps_hat, lambda_regr)
+    L_rec, L_regr, L_total = stage1_loss(z, z_hat, eps, eps_hat, lambda_regr)
     optimizer.zero_grad(set_to_none=True)
     L_total.backward()
     optimizer.step()
