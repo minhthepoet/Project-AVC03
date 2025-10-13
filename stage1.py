@@ -33,7 +33,7 @@ from torchvision.transforms.functional import resize, to_pil_image
 from torchvision.transforms import InterpolationMode
 from tqdm import tqdm
 
-from models import AuxiliaryModel, IPSBV2Model, InverseModel, tokenize_captions
+from model import AuxiliaryModel, IPSBV2Model, InverseModel, tokenize_captions
 
 
 # -----------------------------

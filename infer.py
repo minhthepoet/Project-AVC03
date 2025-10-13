@@ -8,7 +8,7 @@ from PIL import Image
 from torchvision.transforms.functional import to_tensor
 from torchvision.utils import save_image
 
-from models import *
+from model import *
 
 #
 # Configure this path to where you have stored the local copy of the weights:
