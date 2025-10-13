@@ -1,7 +1,7 @@
 # =============================================================
 #  SwiftEdit - Stage 1 (Synthetic Pretraining)
 #  Copyright (c) 2025
-#  Author: Nhu Duc Minh Nguyen (nnguy29)
+#  Author: Nhu Duc Minh Nguyen (minhnnd2411@gmail.com)
 # =============================================================
 
 import os
