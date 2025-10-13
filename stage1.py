@@ -193,7 +193,7 @@ def main():
     tokenizer, text_encoder = load_text_encoder(DEVICE, DTYPE)
     img_encoder, img_processor = load_image_encoder(DEVICE, DTYPE)
 
-    print("🔹 Initializing TRAINABLE models (f_the + IP-Adapter) ...")
+    print("Initializing TRAINABLE models (f_the + IP-Adapter) ...")
     inverse_net = to_dtype(InverseModel(), DEVICE, DTYPE)
     ip_adapter  = to_dtype(ImageProjModel(), DEVICE, DTYPE)
     g_ip        = to_dtype(IPSBV2Model(unet_model=unet_base, image_proj_model=ip_adapter), DEVICE, DTYPE)
