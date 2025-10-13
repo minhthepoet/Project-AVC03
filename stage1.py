@@ -208,7 +208,7 @@ def main():
             }
             out_path = os.path.join(SAVE_DIR, f"F_theta_stage1_step{step:06d}.pth")
             torch.save(ckpt, out_path)
-            print(f"Saved checkpoint → {out_path}")
+            print(f"Saved checkpoint to {out_path}")
 
     print("Done Stage-1 training.")
 
