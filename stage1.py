@@ -13,6 +13,7 @@ from transformers import (
     CLIPTextModel, CLIPTokenizer,
     CLIPVisionModel, CLIPImageProcessor,
 )
+from transformers import CLIPVisionModelWithProjection, CLIPImageProcessor
 from model import InverseModel, IPSBV2Model, ImageProjModel
 from losses import stage1_loss
 
@@ -121,11 +122,10 @@ def load_text_encoder(device, dtype):
     return tok, txt
 
 def load_image_encoder(device, dtype):
-    img_enc = CLIPVisionModel.from_pretrained("openai/clip-vit-large-patch14")
+    img_enc = CLIPVisionModelWithProjection.from_pretrained("openai/clip-vit-large-patch14")
     img_proc = CLIPImageProcessor.from_pretrained("openai/clip-vit-large-patch14")
     requires_grad(img_enc, False)
-    img_enc.eval().to(device, dtype)
-    return img_enc, img_proc
+    return img_enc.eval().to(device, dtype), img_proc
 
 
 # =============================================================
@@ -168,10 +168,9 @@ def generate_synthetic_batch(
     z = vae.encode(x_synth).latent_dist.sample() * VAE_SCALE
 
     pixel_values = clip_preprocess_from_tensor(x_synth, img_processor).to(device)
-    img_feats = img_encoder(pixel_values=pixel_values).last_hidden_state
-
+    outs = img_encoder(pixel_values=pixel_values)
+    img_feats = outs.image_embeds   # [B, 1024]
     return z, eps, text_emb, img_feats, texts
-
 
 # =============================================================
 # Train step
