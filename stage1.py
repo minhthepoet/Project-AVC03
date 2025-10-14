@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch.optim import AdamW
 from safetensors.torch import load_file
 from diffusers import UNet2DConditionModel, AutoencoderKL
+from torchvision import transforms
 from transformers import (
     CLIPTextModel, CLIPTokenizer,
     CLIPVisionModel, CLIPImageProcessor,
@@ -134,9 +135,11 @@ def load_image_encoder(device, dtype):
 def clip_preprocess_from_tensor(x_rgb_float, img_proc: CLIPImageProcessor):
     x = (x_rgb_float.clamp(-1, 1) + 1.0) / 2.0
     x = x.detach().cpu()
+
     pil_list = []
+    to_pil = transforms.ToPILImage()
     for i in range(x.size(0)):
-        pil = img_proc.postprocess(x[i].unsqueeze(0), output_type="pil")[0]
+        pil = to_pil(x[i])
         pil_list.append(pil)
     pixel = img_proc(images=pil_list, return_tensors="pt")["pixel_values"]
     return pixel
