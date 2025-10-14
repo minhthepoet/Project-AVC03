@@ -134,8 +134,7 @@ def load_image_encoder(device, dtype):
 
 def clip_preprocess_from_tensor(x_rgb_float, img_proc: CLIPImageProcessor):
     x = (x_rgb_float.clamp(-1, 1) + 1.0) / 2.0
-    x = x.detach().cpu()
-
+    x = x.detach().cpu().to(torch.float32)
     pil_list = []
     to_pil = transforms.ToPILImage()
     for i in range(x.size(0)):
