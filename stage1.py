@@ -182,18 +182,24 @@ def generate_synthetic_batch(
 
 def train_step(inverse_net, ip_model, g_ip, optimizer, batch, lambda_regr, device, dtype):
     z, eps, text_emb, img_feats, _ = batch
-    eps_hat = inverse_net(z, text_emb)
-    img_proj = ip_model(img_feats)
     t = torch.full((z.size(0),), 999, device=device, dtype=torch.long)
-    z_hat = g_ip.unet(eps_hat, t, encoder_hidden_states=torch.cat([text_emb, img_proj], dim=1)).sample
-    L_rec, L_regr, L_total = stage1_loss(z, z_hat, eps, eps_hat, lambda_regr)
+    with torch.enable_grad():
+        eps_hat = inverse_net(z, text_emb)                       # should require grad
+        img_proj = ip_model(img_feats)                           # should require grad
+        cond = torch.cat([text_emb, img_proj], dim=1)
+        out = g_ip.unet(eps_hat, t, encoder_hidden_states=cond)  # teacher unet: params frozen nhưng vẫn truyền grad về eps_hat
+        z_hat = out.sample
+
+        L_rec, L_regr, L_total = stage1_loss(z, z_hat, eps, eps_hat, lambda_regr)
+
     optimizer.zero_grad(set_to_none=True)
     L_total.backward()
+    optimizer.step()
+    
     print("eps_hat requires_grad:", eps_hat.requires_grad)
     print("z_hat requires_grad:", z_hat.requires_grad)
     print("L_total requires_grad:", L_total.requires_grad)
 
-    optimizer.step()
     return L_rec.detach(), L_regr.detach(), L_total.detach()
 
 
