@@ -92,10 +92,10 @@ class InverseModel:
                 self.device, dtype=self.weight_dtype
             )
         else:
-            self.tokenizer = CLIPTokenizer.from_pretrained("laion/CLIP-ViT-H-14")
-            self.text_encoder = CLIPTextModel.from_pretrained("laion/CLIP-ViT-H-14").to(
-                self.device, dtype=self.weight_dtype
-            )
+            self.tokenizer = CLIPTokenizer.from_pretrained("laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
+            self.text_encoder = CLIPTextModel.from_pretrained(
+                "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
+            ).to(self.device, dtype=self.weight_dtype)
 
         T = torch.ones((1,), dtype=torch.int64, device=self.device)
         T = T * (self.noise_scheduler.config.num_train_timesteps - 1)
