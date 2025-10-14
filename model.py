@@ -1,6 +1,3 @@
-# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-# SPDX-License-Identifier: BSD-3-Clause-Clear
-
 import torch
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from PIL import Image
@@ -156,7 +153,7 @@ class AuxiliaryModel:
         self.clip_image_processor = CLIPImageProcessor()
 
 
-class IPSBV2Model_Stage1(torch.nn.Module):
+class IPSBV2Model(torch.nn.Module):
     def __init__(
         self,
         unet_model,          
@@ -169,14 +166,8 @@ class IPSBV2Model_Stage1(torch.nn.Module):
         self.unet = unet_model.to(device).eval()      
         self.image_proj_model = image_proj_model.to(device)
         self.dtype = dtype
-    def forward(self, eps, t, text_emb, img_feats):
-        """
-        eps        : predicted latent (from F_theta)
-        t          : timestep tensor (e.g., 999)
-        text_emb   : [B, 77, 1024]
-        img_feats  : CLIP image features -> projected by IP-Adapter
-        """
+    def forward(self, eps_hat, t, text_emb, img_feats):
         img_proj = self.image_proj_model(img_feats)           # [B, 4, 1024]
         cond = torch.cat([text_emb, img_proj], dim=1)         # concat condition tokens
-        out = self.unet(eps, t, encoder_hidden_states=cond).sample
+        out = self.unet(eps_hat, t, encoder_hidden_states=cond).sample
         return out

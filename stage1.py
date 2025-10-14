@@ -1,6 +1,4 @@
-# =============================================================
 # SwiftEdit — Stage 1 By minhthepoet
-# =============================================================
 import argparse
 import os, json, time, random
 os.environ["DBG_SHAPES"] = "1"
@@ -15,12 +13,10 @@ from transformers import (
     CLIPVisionModel, CLIPImageProcessor,
 )
 from transformers import CLIPVisionModelWithProjection, CLIPImageProcessor
-from model import InverseModel, IPSBV2Model_Stage1, ImageProjModel
+from model import InverseModel, IPSBV2Model, ImageProjModel
 from losses import stage1_loss
 
-# =============================================================
 # Config 
-# =============================================================
 
 parser = argparse.ArgumentParser(description="SwiftEdit Stage 1 Training")
 parser.add_argument("--model_path", type=str, default="swiftbrushV2", help="Path to SwiftBrushV2 folder")
@@ -62,10 +58,7 @@ VAE_SCALE = 0.18215
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 
-
-# =============================================================
 # Helpers
-# =============================================================
 
 def set_seed(seed: int):
     random.seed(seed); torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
@@ -83,9 +76,8 @@ def update_ema(src: nn.Module, tgt: nn.Module, decay: float = 0.999):
         p_tgt.data.mul_(decay).add_(p_src.data, alpha=1.0 - decay)
 
 
-# =============================================================
+
 # Load modules
-# =============================================================
 
 def load_sbv2_unet(local_dir: str, device, dtype):
     with open(os.path.join(local_dir, "config.json"), "r") as f:
@@ -129,10 +121,8 @@ def load_image_encoder(device, dtype):
     img_enc.eval(); img_enc.requires_grad_(False)
     return img_enc.to(device, dtype), img_proc
 
-
-# =============================================================
 # Data utilities
-# =============================================================
+
 
 def clip_preprocess_from_tensor(x_rgb_float, img_proc: CLIPImageProcessor):
     x = (x_rgb_float.clamp(-1, 1) + 1.0) / 2.0
@@ -176,9 +166,7 @@ def generate_synthetic_batch(
         print("Warning: image_embeds dim =", img_feats.shape[-1])
     return z, eps, text_emb, img_feats, texts
 
-# =============================================================
 # Train step
-# =============================================================
 
 def train_step(inverse_net, ip_model, g_ip, optimizer, batch, lambda_regr, device, dtype):
     z, eps, text_emb, img_feats, _ = batch
@@ -198,9 +186,7 @@ def train_step(inverse_net, ip_model, g_ip, optimizer, batch, lambda_regr, devic
     return L_rec.detach(), L_regr.detach(), L_total.detach()
 
 
-# =============================================================
 # Main training loop
-# =============================================================
 
 def main():
     set_seed(SEED)
@@ -218,7 +204,7 @@ def main():
     print("Initializing TRAINABLE models (f_the + IP-Adapter) ...")
     inverse_net = to_dtype(InverseModel(pretrained_model_name_path = SBV2_DIR), DEVICE, DTYPE)
     ip_adapter  = to_dtype(ImageProjModel(), DEVICE, DTYPE)
-    g_ip = to_dtype(IPSBV2Model_Stage1( unet_model=unet_base, image_proj_model=ip_adapter, device=DEVICE ), DEVICE, DTYPE )
+    g_ip = to_dtype(IPSBV2Model( unet_model=unet_base, image_proj_model=ip_adapter, device=DEVICE ), DEVICE, DTYPE )
 
     ema_net = to_dtype(InverseModel(pretrained_model_name_path=SBV2_DIR), DEVICE, DTYPE)
     ema_net.load_state_dict(inverse_net.state_dict(), strict=True)

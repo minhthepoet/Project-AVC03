@@ -81,5 +81,5 @@ def stage2_regularizer(teacher_unet, scheduler, z_real, eps_hat, text_embeds,
 
 def stage2_total_loss(perceptual_loss, x_hat, x_gt, L_regu, lambda_perc=1.0, lambda_regu=1.0):
     L_perc = perceptual_loss(x_hat, x_gt)
-    L_total = lambda_perc * L_perc - lambda_regu * L_regu
+    L_total = lambda_perc * L_perc + lambda_regu * L_regu
     return L_total, L_perc, L_regu
