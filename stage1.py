@@ -195,11 +195,6 @@ def train_step(inverse_net, ip_model, g_ip, optimizer, batch, lambda_regr, devic
     optimizer.zero_grad(set_to_none=True)
     L_total.backward()
     optimizer.step()
-    
-    print("eps_hat requires_grad:", eps_hat.requires_grad)
-    print("z_hat requires_grad:", z_hat.requires_grad)
-    print("L_total requires_grad:", L_total.requires_grad)
-
     return L_rec.detach(), L_regr.detach(), L_total.detach()
 
 
@@ -234,10 +229,6 @@ def main():
     requires_grad(inverse_net, True)
     requires_grad(ip_adapter, True)
     requires_grad(g_ip.unet, False)
-    print("inverse_net params grad:", any(p.requires_grad for p in inverse_net.parameters()))
-    print("ip_adapter params grad:", any(p.requires_grad for p in ip_adapter.parameters()))
-    print("g_ip.unet params grad:", any(p.requires_grad for p in g_ip.unet.parameters()))
-
     print("---Starting Stage-1 training ...")
     t0 = time.time()
 
