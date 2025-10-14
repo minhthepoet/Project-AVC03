@@ -4,6 +4,7 @@
 import torch
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from PIL import Image
+from transformers import CLIPTokenizer, CLIPTextModel
 from transformers import (
     AutoTokenizer,
     CLIPImageProcessor,
@@ -74,15 +75,27 @@ class InverseModel:
             self.device, dtype=torch.float32
         )
 
+        unet_path = os.path.join(pretrained_model_name_path, "unet_ema")
+        if not os.path.exists(os.path.join(unet_path, "config.json")):
+            unet_path = pretrained_model_name_path  
         self.unet_inverse = UNet2DConditionModel.from_pretrained(
-            pretrained_model_name_path, subfolder="unet_ema"
+            unet_path
         ).to(self.device, dtype=self.weight_dtype)
 
         self.unet_inverse.eval()
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, subfolder="tokenizer")
-        self.text_encoder = CLIPTextModel.from_pretrained(
-            self.model_name, subfolder="text_encoder"
-        ).to(self.device, dtype=self.weight_dtype)
+        local_tok_path = os.path.join(pretrained_model_name_path, "tokenizer")
+        local_txt_path = os.path.join(pretrained_model_name_path, "text_encoder")
+
+        if os.path.exists(local_tok_path) and os.path.exists(local_txt_path):
+            self.tokenizer = CLIPTokenizer.from_pretrained(local_tok_path)
+            self.text_encoder = CLIPTextModel.from_pretrained(local_txt_path).to(
+                self.device, dtype=self.weight_dtype
+            )
+        else:
+            self.tokenizer = CLIPTokenizer.from_pretrained("laion/CLIP-ViT-H-14")
+            self.text_encoder = CLIPTextModel.from_pretrained("laion/CLIP-ViT-H-14").to(
+                self.device, dtype=self.weight_dtype
+            )
 
         T = torch.ones((1,), dtype=torch.int64, device=self.device)
         T = T * (self.noise_scheduler.config.num_train_timesteps - 1)
@@ -122,184 +135,32 @@ class AuxiliaryModel:
 
 class IPSBV2Model(torch.nn.Module):
     """
-        SwiftBrushv2 model with incorporated IP-Adapter.
+        SwiftBrushV2 UNet with integrated IP-Adapter (Stage-1 version)
+        - Wraps a frozen UNet (teacher) and a trainable IP-Adapter branch.
+        - Used during synthetic pretraining only.
     """
     def __init__(
         self,
-        pretrained_model_name_path,
-        ip_model_path,
-        aux_model,
+        unet_model,          
+        image_proj_model,        
         device="cuda",
-        with_ip_mask_controller=False,
+        dtype=torch.float32
     ):
         super().__init__()
         self.device = device
-        self.unet = UNet2DConditionModel.from_pretrained(
-            pretrained_model_name_path
-        ).to(self.device)
-        self.unet.eval()
-        self.aux_model = aux_model
-
-        self.timestep = torch.ones((1,), dtype=torch.int64, device=self.device)
-        self.timestep = self.timestep * (
-            self.aux_model.noise_scheduler.config.num_train_timesteps - 1
-        )
-
-        self.image_proj_model = ImageProjModel(
-            cross_attention_dim=self.unet.config.cross_attention_dim,
-            clip_embeddings_dim=self.aux_model.image_encoder.config.projection_dim,
-            clip_extra_context_tokens=4,
-        ).to(self.device)
-
-        self.with_ip_mask_controller = with_ip_mask_controller
-
-        # init adapter modules
-        attn_procs = {}
-        unet_sd = self.unet.state_dict()
-        for name in self.unet.attn_processors.keys():
-            cross_attention_dim = (
-                None if name.endswith("attn1.processor") else self.unet.config.cross_attention_dim
-            )
-            if name.startswith("mid_block"):
-                hidden_size = self.unet.config.block_out_channels[-1]
-            elif name.startswith("up_blocks"):
-                block_id = int(name[len("up_blocks.")])
-                hidden_size = list(reversed(self.unet.config.block_out_channels))[block_id]
-            elif name.startswith("down_blocks"):
-                block_id = int(name[len("down_blocks.")])
-                hidden_size = self.unet.config.block_out_channels[block_id]
-            if cross_attention_dim is None:
-                attn_procs[name] = AttnProcessor().to(device)
-            else:
-                # this is for cross-attention
-                layer_name = name.split(".processor")[0]
-                weights = {
-                    "to_k_ip.weight": unet_sd[layer_name + ".to_k.weight"],
-                    "to_v_ip.weight": unet_sd[layer_name + ".to_v.weight"],
-                }
-                if self.with_ip_mask_controller:
-                    attn_procs[name] = IPAttnProcessor2_0WithIPMaskController(
-                        hidden_size=hidden_size, cross_attention_dim=cross_attention_dim
-                    ).to(device)
-                else:
-                    attn_procs[name] = IPAttnProcessor(
-                        hidden_size=hidden_size, cross_attention_dim=cross_attention_dim
-                    ).to(device)
-                attn_procs[name].load_state_dict(weights)
-
-        self.unet.set_attn_processor(attn_procs)
-        self.adapter_modules = torch.nn.ModuleList(self.unet.attn_processors.values())
-
-        # prepare stuff
-        alphas_cumprod = self.aux_model.noise_scheduler.alphas_cumprod.to(self.device)
-        self.alpha_t = (alphas_cumprod[self.timestep] ** 0.5).view(-1, 1, 1, 1)
-        self.sigma_t = ((1 - alphas_cumprod[self.timestep]) ** 0.5).view(-1, 1, 1, 1)
-        del alphas_cumprod
-
-        self.load_state_dict(torch.load(ip_model_path))
-        # self.load_ip_adapter(path_ckpt_ip)
-
-    def load_ip_adapter(self, path_ckpt_ip):
-
-        sd = torch.load(path_ckpt_ip, map_location="cpu")
-        image_proj_sd = {}
-        ip_sd = {}
-        for k in sd:
-            if k.startswith("unet"):
-                pass
-            elif k.startswith("image_proj_model"):
-                image_proj_sd[k.replace("image_proj_model.", "")] = sd[k]
-            elif k.startswith("adapter_modules"):
-                ip_sd[k.replace("adapter_modules.", "")] = sd[k]
-
-        self.image_proj_model.load_state_dict(image_proj_sd)
-        self.adapter_modules.load_state_dict(ip_sd)
-
-    @torch.inference_mode()
-    def get_image_embeds(self, pil_image=None, clip_image_embeds=None):
-        if pil_image is not None:
-            if isinstance(pil_image, Image.Image):
-                pil_image = [pil_image]
-            clip_image = self.aux_model.clip_image_processor(
-                images=pil_image, return_tensors="pt"
-            ).pixel_values
-            clip_image_embeds = self.aux_model.image_encoder(
-                clip_image.to(self.device, dtype=torch.float32)
-            ).image_embeds
-        else:
-            clip_image_embeds = clip_image_embeds.to(self.device, dtype=torch.float32)
-        image_prompt_embeds = self.image_proj_model(clip_image_embeds)
-        return image_prompt_embeds
-
-    def set_scale(self, scale):
-        for attn_processor in self.unet.attn_processors.values():
-            if isinstance(attn_processor, IPAttnProcessor) or isinstance(
-                attn_processor, IPAttnProcessor2_0WithIPMaskController
-            ):
-                attn_processor.scale = scale
-
-    def set_controller(
-        self, controller, where=["down_blocks", "mid_block", "up_blocks"], type_controller=None
-    ):
-
-        for name_attn_processor, attn_processor in self.unet.attn_processors.items():
-            if isinstance(attn_processor, IPAttnProcessor2_0WithIPMaskController):
-                # only set at particular blocks
-                for from_where in where:
-                    if from_where in name_attn_processor:
-                        attn_processor.controller = controller
+        self.unet = unet_model.to(device).eval()      
+        self.image_proj_model = image_proj_model.to(device)
+        self.dtype = dtype
 
     @torch.no_grad()
-    def gen_img(
-        self,
-        pil_image=None,
-        prompts=None,
-        noise=None,
-        scale=1.0,
-    ):
-
-        self.set_scale(scale)
-        num_samples = len(prompts)
-        
-        # Prepare prompt + image embeds
-        if prompts is None:
-            prompts = ["best quality, high quality"]
-
-        image_prompt_embeds = self.get_image_embeds(pil_image=pil_image)
-        bs_embed, seq_len, _ = image_prompt_embeds.shape
-        image_prompt_embeds = image_prompt_embeds.repeat(1, num_samples, 1)
-        image_prompt_embeds = image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
-
-        input_id = tokenize_captions(self.aux_model.tokenizer, prompts).to(self.device)
-        prompt_embeds_ = self.aux_model.text_encoder(input_id)[0]
-        prompt_embeds = torch.cat([prompt_embeds_, image_prompt_embeds], dim=1)
-
-        # Feed inverted noise to ip-unet generation
-        noise = torch.cat([noise] * num_samples, dim=0)
-        model_pred = self.unet(noise, self.timestep, prompt_embeds).sample
-
-        if model_pred.shape[1] == noise.shape[1] * 2:
-            model_pred, _ = torch.split(model_pred, noise.shape[1], dim=1)
-
-        pred_original_sample = (noise - self.sigma_t * model_pred) / self.alpha_t
-
-        if self.aux_model.noise_scheduler.config.thresholding:
-            pred_original_sample = self.aux_model.noise_scheduler._threshold_sample(
-                pred_original_sample
-            )
-        elif self.aux_model.noise_scheduler.config.clip_sample:
-            clip_sample_range = self.aux_model.noise_scheduler.config.clip_sample_range
-            pred_original_sample = pred_original_sample.clamp(-clip_sample_range, clip_sample_range)
-
-        pred_original_sample = pred_original_sample / self.aux_model.vae.config.scaling_factor
-        image = (
-            self.aux_model.vae.decode(pred_original_sample.to(dtype=torch.float32)).sample.float() + 1
-        ) / 2
-
-        noise_image = noise / self.aux_model.vae.config.scaling_factor
-        noise_image = (
-            self.aux_model.vae.decode(noise_image.to(dtype=self.aux_model.vae.dtype)).sample.float()
-            + 1
-        ) / 2
-
-        return image, noise_image
+    def forward(self, eps, t, text_emb, img_feats):
+        """
+        eps        : predicted latent (from F_theta)
+        t          : timestep tensor (e.g., 999)
+        text_emb   : [B, 77, 1024]
+        img_feats  : CLIP image features -> projected by IP-Adapter
+        """
+        img_proj = self.image_proj_model(img_feats)           # [B, 4, 1024]
+        cond = torch.cat([text_emb, img_proj], dim=1)         # concat condition tokens
+        out = self.unet(eps, t, encoder_hidden_states=cond).sample
+        return out
