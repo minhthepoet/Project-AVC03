@@ -9,7 +9,6 @@ def stage1_loss(z, z_hat, eps, eps_hat, lambda_regr=1.0):
     L_total = L_rec + lambda_regr * L_regr
     return L_rec, L_regr, L_total
 
-# ---------- Perceptual ----------
 class PerceptualLoss(nn.Module):
     """Prefer DISTS, fallback LPIPS, else L1."""
     def __init__(self, device):
@@ -29,7 +28,6 @@ class PerceptualLoss(nn.Module):
         print(f"[Perceptual] Using {self.mode}")
 
     def forward(self, x, y):
-        # x,y in [0,1], shape [B,3,H,W]
         if self.mode == "DISTS":
             return self.impl(x, y)
         elif self.mode == "LPIPS":
@@ -40,13 +38,7 @@ class PerceptualLoss(nn.Module):
 
 
 def _alpha_bar_terms(scheduler, t_tensor: torch.Tensor, device=None, dtype=None):
-    """
-    Returns sqrt_ab = sqrt(alpha_bar_t), sqrt_1m = sqrt(1 - alpha_bar_t),
-    and a_bar itself (shape [B,1,1,1]) for weighting.
-    - scheduler: DDPMScheduler.from_pretrained(".../stable-diffusion-2-1-base", subfolder="scheduler")
-    - t_tensor:  [B] timesteps (int64 indices in [0, T-1]) or floats in [0,1]
-    """
-    a_cum = scheduler.alphas_cumprod  # [T]
+    a_cum = scheduler.alphas_cumprod  
     if device is None:
         device = a_cum.device
     T = a_cum.shape[0]
@@ -78,7 +70,7 @@ def stage2_regularizer(teacher_unet, scheduler, z_real, eps_hat, text_embeds,
         eps_teacher = teacher_unet(z_t.to(te_dtype), t, text_embeds.to(te_dtype)).sample
     eps_teacher = eps_teacher.to(eps_hat.dtype)
     if use_w:
-        a_bar = scheduler.alphas_cumprod.to(device)[t].view(-1,1,1,1)  # [B,1,1,1]
+        a_bar = scheduler.alphas_cumprod.to(device)[t].view(-1,1,1,1) 
         w = (1.0 - a_bar)
         L_regu = (w * (eps_hat - eps_teacher).pow(2)).mean()
     else:
@@ -87,11 +79,7 @@ def stage2_regularizer(teacher_unet, scheduler, z_real, eps_hat, text_embeds,
     return L_regu, t
 
 
-def stage2_total_loss(perceptual_loss, x_hat, x_gt, L_regu,
-                      lambda_perc=1.0, lambda_regu=1.0):
-    """
-    L_total = L_perceptual - λ * L_regu   (sign theo Eq. 8)
-    """
+def stage2_total_loss(perceptual_loss, x_hat, x_gt, L_regu, lambda_perc=1.0, lambda_regu=1.0):
     L_perc = perceptual_loss(x_hat, x_gt)
     L_total = lambda_perc * L_perc - lambda_regu * L_regu
     return L_total, L_perc, L_regu
