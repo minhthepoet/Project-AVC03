@@ -220,6 +220,10 @@ def main():
     requires_grad(ema_net, False)
 
     optimizer = AdamW(list(inverse_net.parameters()) + list(ip_adapter.parameters()), lr=LR, weight_decay=WD)
+    # ensure correct grad flow
+    requires_grad(inverse_net, True)
+    requires_grad(ip_adapter, True)
+    requires_grad(g_ip.unet, False)
 
     print("---Starting Stage-1 training ...")
     t0 = time.time()
