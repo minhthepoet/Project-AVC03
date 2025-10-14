@@ -107,6 +107,28 @@ class InverseModel(nn.Module):
 
         del alphas_cumprod
 
+    def forward(self, z, text_emb):
+        """
+        z         : latent từ VAE (shape [B,4,64,64])
+        text_emb  : text embedding từ CLIP (shape [B,77,1024])
+        return    : eps_hat (predicted noise)
+        """
+        t = torch.full(
+            (z.size(0),), 
+            self.noise_scheduler.config.num_train_timesteps - 1,
+            device=self.device, 
+            dtype=torch.long
+        )
+
+        eps_hat = self.unet_inverse(
+            z, 
+            t, 
+            encoder_hidden_states=text_emb
+        ).sample
+
+        return eps_hat
+
+
 class AuxiliaryModel:
     """
         A few auxiliary and supported models (text encoder, noise scheduler, tokenizer, ...) as separate modules.
@@ -152,8 +174,6 @@ class IPSBV2Model(torch.nn.Module):
         self.unet = unet_model.to(device).eval()      
         self.image_proj_model = image_proj_model.to(device)
         self.dtype = dtype
-
-    @torch.no_grad()
     def forward(self, eps, t, text_emb, img_feats):
         """
         eps        : predicted latent (from F_theta)
