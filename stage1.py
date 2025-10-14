@@ -3,6 +3,7 @@
 # =============================================================
 import argparse
 import os, json, time, random
+os.environ["DBG_SHAPES"] = "1"
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
@@ -122,10 +123,11 @@ def load_text_encoder(device, dtype):
     return tok, txt
 
 def load_image_encoder(device, dtype):
-    img_enc = CLIPVisionModelWithProjection.from_pretrained("openai/clip-vit-large-patch14")
-    img_proc = CLIPImageProcessor.from_pretrained("openai/clip-vit-large-patch14")
-    requires_grad(img_enc, False)
-    return img_enc.eval().to(device, dtype), img_proc
+    model_id = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
+    img_enc = CLIPVisionModelWithProjection.from_pretrained(model_id)
+    img_proc = CLIPImageProcessor.from_pretrained(model_id)
+    img_enc.eval(); img_enc.requires_grad_(False)
+    return img_enc.to(device, dtype), img_proc
 
 
 # =============================================================
@@ -170,6 +172,8 @@ def generate_synthetic_batch(
     pixel_values = clip_preprocess_from_tensor(x_synth, img_processor).to(device)
     outs = img_encoder(pixel_values=pixel_values)
     img_feats = outs.image_embeds   # [B, 1024]
+    if img_feats.shape[-1] != 1024:
+        print("Warning: image_embeds dim =", img_feats.shape[-1])
     return z, eps, text_emb, img_feats, texts
 
 # =============================================================
