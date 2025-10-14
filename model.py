@@ -86,6 +86,7 @@ class InverseModel(nn.Module):
         self.unet_inverse.eval()
         self.tokenizer = CLIPTokenizer.from_pretrained("laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
         self.text_encoder = CLIPTextModel.from_pretrained("laion/CLIP-ViT-H-14-laion2B-s32B-b79K").to(self.device, dtype=self.weight_dtype)
+        print("🔹 Loaded CLIP:", self.text_encoder.config.hidden_size)
 
         T = torch.ones((1,), dtype=torch.int64, device=self.device)
         T = T * (self.noise_scheduler.config.num_train_timesteps - 1)
