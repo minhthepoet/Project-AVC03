@@ -61,6 +61,7 @@ class InverseModel(nn.Module):
         dtype="fp32",
         device="cuda"
     ):
+        super().__init__()
         if dtype == "fp16":
             self.weight_dtype = torch.float16
         elif dtype == "bf16":
