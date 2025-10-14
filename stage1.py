@@ -100,11 +100,23 @@ def load_vae(device, dtype):
     vae.eval().to(device, dtype)
     return vae
 
+from transformers import CLIPTextModel, CLIPTokenizer
+import os
+
 def load_text_encoder(device, dtype):
-    tok = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-    txt = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
-    requires_grad(txt, False)
-    txt.eval().to(device, dtype)
+    local_tok = os.path.join(SBV2_DIR, "tokenizer")
+    local_txt = os.path.join(SBV2_DIR, "text_encoder")
+
+    if os.path.exists(local_tok) and os.path.exists(local_txt):
+        tok = CLIPTokenizer.from_pretrained(local_tok)
+        txt = CLIPTextModel.from_pretrained(local_txt)
+    else:
+        tok = CLIPTokenizer.from_pretrained("laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
+        txt = CLIPTextModel.from_pretrained("laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
+
+    txt.eval()
+    tok.model_max_length = 77
+    txt = txt.to(device=device, dtype=dtype)
     return tok, txt
 
 def load_image_encoder(device, dtype):
