@@ -30,12 +30,13 @@ class PerceptualLoss(nn.Module):
         else:
             return self.impl(x, y)
 
-# ---------- Stage-1 ----------
-def stage1_loss(eps_hat, eps, z0_student, z0_target, lambda_regr=1.0):
+def stage1_loss(z, z_hat, eps, eps_hat, lambda_regr=1.0):
     mse = nn.MSELoss()
+    L_rec  = mse(z_hat, z)
     L_regr = mse(eps_hat, eps)
-    L_rec  = mse(z0_student, z0_target)
-    return L_rec + lambda_regr * L_regr, L_rec.detach(), L_regr.detach()
+    L_total = L_rec + lambda_regr * L_regr
+    return L_rec, L_regr, L_total
+
 
 # ---------- SDS utilities ----------
 def _alpha_bar_terms(scheduler, t_tensor: torch.Tensor, device):
