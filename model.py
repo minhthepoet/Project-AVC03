@@ -50,7 +50,7 @@ class ImageProjModel(torch.nn.Module):
         return clip_extra_context_tokens
 
 
-class InverseModel:
+class InverseModel(nn.Module):
     """
         Inversion Network that bring source image latents to noisy latents.
     """
