@@ -15,7 +15,7 @@ from transformers import (
     CLIPVisionModel, CLIPImageProcessor,
 )
 from transformers import CLIPVisionModelWithProjection, CLIPImageProcessor
-from model import InverseModel, IPSBV2Model, ImageProjModel
+from model import InverseModel, IPSBV2Model_Stage1, ImageProjModel
 from losses import stage1_loss
 
 # =============================================================
@@ -218,7 +218,7 @@ def main():
     print("Initializing TRAINABLE models (f_the + IP-Adapter) ...")
     inverse_net = to_dtype(InverseModel(pretrained_model_name_path = SBV2_DIR), DEVICE, DTYPE)
     ip_adapter  = to_dtype(ImageProjModel(), DEVICE, DTYPE)
-    g_ip = to_dtype( IPSBV2Model( unet_model=unet_base, image_proj_model=ip_adapter, device=DEVICE ), DEVICE, DTYPE )
+    g_ip = to_dtype(IPSBV2Model_Stage1( unet_model=unet_base, image_proj_model=ip_adapter, device=DEVICE ), DEVICE, DTYPE )
 
     ema_net = to_dtype(InverseModel(pretrained_model_name_path=SBV2_DIR), DEVICE, DTYPE)
     ema_net.load_state_dict(inverse_net.state_dict(), strict=True)

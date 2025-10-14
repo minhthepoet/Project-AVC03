@@ -156,12 +156,7 @@ class AuxiliaryModel:
         self.clip_image_processor = CLIPImageProcessor()
 
 
-class IPSBV2Model(torch.nn.Module):
-    """
-        SwiftBrushV2 UNet with integrated IP-Adapter (Stage-1 version)
-        - Wraps a frozen UNet (teacher) and a trainable IP-Adapter branch.
-        - Used during synthetic pretraining only.
-    """
+class IPSBV2Model_Stage1(torch.nn.Module):
     def __init__(
         self,
         unet_model,          
