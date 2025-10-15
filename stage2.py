@@ -394,3 +394,5 @@ def main():
             break
 
     print("Done Stage-2 training.")
+if __name__ == "__main__":
+    main()
