@@ -162,7 +162,13 @@ class RealImagePromptDataset(torch.utils.data.Dataset):
 def make_loader(list_file, batch_size):
     ds = RealImagePromptDataset(list_file)
     return torch.utils.data.DataLoader(
-        ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True
+        ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=True,
+        drop_last=True,
+        collate_fn=lambda x: x[0],
     )
 
 # Train step (Stage 2)
