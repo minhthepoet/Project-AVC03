@@ -8,7 +8,6 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from safetensors.torch import load_file
-from diffusers import UNNet2DConditionModel as UNet2DConditionModel  # for safety on some envs
 from diffusers import UNet2DConditionModel, AutoencoderKL, DDPMScheduler
 from torchvision import transforms
 from PIL import Image
