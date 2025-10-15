@@ -260,9 +260,12 @@ def train_step_stage2(
     optimizer.step()
     # --- Extra metrics (for logging only) ---
     with torch.no_grad():
-        cos = torch.nn.functional.cosine_similarity(
-            eps_hat.flatten(1), eps_t.flatten(1)
-        ).mean().item()
+        if eps_t is not None and eps_t.ndim >= 2:
+            cos = torch.nn.functional.cosine_similarity(
+                eps_hat.flatten(1), eps_t.flatten(1)
+            ).mean().item()
+        else:
+            cos = float("nan")  
     # --- Return losses as floats (safe for logging) ---
     return L_total.item(), L_perc.item(), L_reg.item(), cos
 
