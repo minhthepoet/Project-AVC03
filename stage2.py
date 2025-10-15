@@ -197,7 +197,7 @@ def train_step_stage2(
     if isinstance(pil_imgs, Image.Image):
         pil_imgs = [pil_imgs]
     clip_pixels = img_processor(images=pil_imgs, return_tensors="pt")["pixel_values"].to(device, dtype=torch.float32)
-    img_feats   = img_encoder(clip_pixels).image_embeds  
+    img_feats = img_encoder(clip_pixels).image_embeds.to(dtype)
     px_m11 = (px_01.to(device, dtype=torch.float32) * 2.0 - 1.0)  # [-1,1]
     if px_m11.ndim == 3:
         px_m11 = px_m11.unsqueeze(0)  
