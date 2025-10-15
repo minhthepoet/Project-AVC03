@@ -62,7 +62,8 @@ def stage2_regularizer(teacher_unet, scheduler, z_real, eps_hat, text_embeds,
                        tmin=200, tmax=800, device="cuda", dtype=None, use_w=True):
     B = eps_hat.size(0)
     t = torch.randint(low=tmin, high=tmax + 1, size=(B,), device=device, dtype=torch.int64)
-    sqrt_ab, sqrt_1m = _alpha_bar_terms(scheduler, t, device)
+    sqrt_ab, sqrt_1m, _ = _alpha_bar_terms(scheduler, t, device)
+
 
     z_t = sqrt_ab * z_real + sqrt_1m * eps_hat
     te_dtype = next(teacher_unet.parameters()).dtype if dtype is None else dtype
