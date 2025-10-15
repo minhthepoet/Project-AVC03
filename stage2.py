@@ -258,16 +258,8 @@ def train_step_stage2(
         torch.nn.utils.clip_grad_norm_(ip_adapter.parameters(), 1.0)
 
     optimizer.step()
-    # --- Extra metrics (for logging only) ---
-    with torch.no_grad():
-        if eps_t is not None and eps_t.ndim >= 2:
-            cos = torch.nn.functional.cosine_similarity(
-                eps_hat.flatten(1), eps_t.flatten(1)
-            ).mean().item()
-        else:
-            cos = float("nan")  
     # --- Return losses as floats (safe for logging) ---
-    return L_total.item(), L_perc.item(), L_reg.item(), cos
+    return L_total.item(), L_perc.item(), L_reg.item()
 
 
 def main():
@@ -345,7 +337,7 @@ def main():
             pil_imgs, px_01, prompts, _ = batch
             step += 1
 
-            L_total, L_perc, L_reg, cos = train_step_stage2(
+            L_total, L_perc, L_reg = train_step_stage2(
                 inverse_net, g_ip, ip_adapter,
                 teacher_unet, scheduler, vae_t,
                 tokenizer, text_encoder,
@@ -372,7 +364,7 @@ def main():
                 dt = time.time() - t0
                 print(f"[{step:06d}/{TOTAL_STEPS}] "
                       f"L={L_total:.4f} (ema={ema_L:.4f}, perc={L_perc:.4f}, ema_p={ema_perc:.4f}, "
-                      f"reg={L_reg:.4f}, ema_r={ema_reg:.4f}, cos={cos:.3f}) | {(dt/args.log_every):.3f}s/it")
+                      f"reg={L_reg:.4f}, ema_r={ema_reg:.4f}) | {(dt/args.log_every):.3f}s/it")
                 t0 = time.time()
 
             # Save checkpoint
