@@ -268,10 +268,41 @@ def train_step_stage2(
 
 
 def main():
-    # Resume logic
+    # =============================================================
+    # 0️⃣ Setup + model init
+    # =============================================================
+    inverse_net = to_dtype(InverseModel(pretrained_model_name_path=SBV2_DIR), DEVICE, DTYPE)
+    ip_adapter  = to_dtype(ImageProjModel(), DEVICE, DTYPE)
+    ema_net     = to_dtype(InverseModel(pretrained_model_name_path=SBV2_DIR), DEVICE, DTYPE)
+
+    # load frozen UNet + teacher + encoders
+    print("Loading FROZEN backbones ...")
+    unet_base = load_sbv2_unet(SBV2_DIR, DEVICE, DTYPE)
+    teacher_unet, scheduler, vae_t = load_teacher_components(args.teacher_model, DEVICE)
+    tokenizer, text_encoder = load_text_encoder(DEVICE, DTYPE)
+    img_encoder, img_processor = load_image_encoder(DEVICE)
+
+    # Build main model
+    g_ip = to_dtype(IPSBV2Model(unet_model=unet_base, image_proj_model=ip_adapter, device=DEVICE), DEVICE, DTYPE)
+
+    # =============================================================
+    # 1️⃣ Build optimizer first
+    # =============================================================
+    params = list(inverse_net.parameters())
+    if args.finetune_ip:
+        params += list(ip_adapter.parameters())
+    optimizer = AdamW(params, lr=LR, weight_decay=WD)
+
+    # EMA copy
+    ema_net.load_state_dict(inverse_net.state_dict(), strict=True)
+    requires_grad(ema_net, False)
+
+    # =============================================================
+    # 2️⃣ Load checkpoint
+    # =============================================================
     start_step = 0
     if args.resume_from is not None and os.path.exists(args.resume_from):
-        print(f" Resuming from checkpoint: {args.resume_from}")
+        print(f"Resuming Stage-2 from checkpoint: {args.resume_from}")
         ckpt = torch.load(args.resume_from, map_location=DEVICE)
         inverse_net.load_state_dict(ckpt["inverse_net"])
         ema_net.load_state_dict(ckpt["inverse_net_ema"])
@@ -279,59 +310,30 @@ def main():
         optimizer.load_state_dict(ckpt["optimizer"])
         start_step = ckpt.get("step", 0)
         print(f"Resumed training from step {start_step}")
+    else:
+        print(f"Starting Stage-2 from Stage-1 checkpoint: {args.stage1_ckpt}")
+        ckpt = torch.load(args.stage1_ckpt, map_location="cpu")
+        inverse_net.load_state_dict(ckpt["inverse_net"])
+        ema_net.load_state_dict(ckpt["inverse_net"])
+        ip_adapter.load_state_dict(ckpt["ip_adapter"])
+        start_step = 0
 
-    # Main loop
+    # Data + perceptual loss
+    loader = make_loader(args.data_list, BATCH_SIZE)
+    perceptual = PerceptualLoss(DEVICE)
+
+    # Freeze non-trainables
+    requires_grad(g_ip.unet, False)
+    requires_grad(ip_adapter, args.finetune_ip)
+
+    print("--- Starting Stage-2 training ---")
+    # EMA smoothing vars
+    ema_L = ema_perc = ema_reg = 0.0
+    alpha = 0.9
     t0 = time.time()
     step = start_step
-    set_seed(SEED)
-    print("Loading FROZEN backbones ...")
-    # student UNet (SBv2)
-    unet_base = load_sbv2_unet(SBV2_DIR, DEVICE, DTYPE)
-    # teacher stack (SD 2.1)
-    teacher_unet, scheduler, vae_t = load_teacher_components(args.teacher_model, DEVICE)
 
-    tokenizer, text_encoder = load_text_encoder(DEVICE, DTYPE)
-    img_encoder, img_processor = load_image_encoder(DEVICE)
-
-    print("Restoring Stage-1 checkpoint ...")
-    ckpt = torch.load(args.stage1_ckpt, map_location="cpu")
-
-    inverse_net = to_dtype(InverseModel(pretrained_model_name_path=SBV2_DIR), DEVICE, DTYPE)
-    # prefer EMA if present
-    if "inverse_net_ema" in ckpt:
-        inverse_net.load_state_dict(ckpt["inverse_net_ema"], strict=True)
-    else:
-        inverse_net.load_state_dict(ckpt["inverse_net"], strict=True)
-
-    ip_adapter  = to_dtype(ImageProjModel(), DEVICE, DTYPE)
-    if "ip_adapter" in ckpt:
-        ip_adapter.load_state_dict(ckpt["ip_adapter"], strict=True)
-
-    # wrapper for frozen student UNet (+ attn procs already in UNet weights)
-    g_ip = to_dtype(IPSBV2Model(unet_model=unet_base, image_proj_model=ip_adapter, device=DEVICE), DEVICE, DTYPE)
-
-    # freeze UNet; IP-Adapter frozen by default (optional finetune via flag)
-    requires_grad(g_ip.unet, False)
-    requires_grad(ip_adapter, args.finetune_ip)  # default False
-
-    # optimizer: F_theta (and optional ip_adapter)
-    params = list(inverse_net.parameters())
-    if args.finetune_ip:
-        params += list(ip_adapter.parameters())
-    optimizer = AdamW(params, lr=LR, weight_decay=WD)
-
-    # EMA for inverse
-    ema_net = to_dtype(InverseModel(pretrained_model_name_path=SBV2_DIR), DEVICE, DTYPE)
-    ema_net.load_state_dict(inverse_net.state_dict(), strict=True)
-    requires_grad(ema_net, False)
-
-    # data
-    loader = make_loader(args.data_list, BATCH_SIZE)
-
-    print("--- Starting Stage-2 training ...")
-    t0 = time.time()
-    step = 0
-    perceptual = PerceptualLoss(DEVICE)
+    # Training loop
     for epoch in range(10**4):
         for batch in loader:
             if step >= TOTAL_STEPS:
@@ -340,9 +342,6 @@ def main():
             pil_imgs, px_01, prompts, _ = batch
             step += 1
 
-            # ===============================
-            # Forward + Backward pass
-            # ===============================
             L_total, L_perc, L_reg, cos = train_step_stage2(
                 inverse_net, g_ip, ip_adapter,
                 teacher_unet, scheduler, vae_t,
@@ -356,19 +355,24 @@ def main():
                 device=DEVICE, dtype=DTYPE,
             )
 
-            # Update EMA weights
-            update_ema(inverse_net, ema_net, EMA_DECAY)
+            # EMA for logging
+            if step == start_step:
+                ema_L, ema_perc, ema_reg = L_total, L_perc, L_reg
+            else:
+                ema_L   = alpha * ema_L   + (1 - alpha) * L_total
+                ema_perc = alpha * ema_perc + (1 - alpha) * L_perc
+                ema_reg  = alpha * ema_reg  + (1 - alpha) * L_reg
 
+            update_ema(inverse_net, ema_net, EMA_DECAY)
 
             if step % args.log_every == 0 or step == 1:
                 dt = time.time() - t0
                 print(f"[{step:06d}/{TOTAL_STEPS}] "
-                    f"L={L_total:.4f} (perc={L_perc:.4f}, reg={L_reg:.4f}, cos={cos:.3f}) | {(dt/args.log_every):.3f}s/it")
+                      f"L={L_total:.4f} (ema={ema_L:.4f}, perc={L_perc:.4f}, ema_p={ema_perc:.4f}, "
+                      f"reg={L_reg:.4f}, ema_r={ema_reg:.4f}, cos={cos:.3f}) | {(dt/args.log_every):.3f}s/it")
                 t0 = time.time()
 
-            # ===============================
             # Save checkpoint
-            # ===============================
             if step % args.save_every == 0 or step == TOTAL_STEPS:
                 ckpt_out = {
                     "inverse_net": inverse_net.state_dict(),
@@ -377,17 +381,12 @@ def main():
                     "optimizer": optimizer.state_dict(),
                     "step": step,
                 }
-
                 os.makedirs(SAVE_DIR, exist_ok=True)
                 ckpt_path = os.path.join(SAVE_DIR, f"F_theta_stage2_step{step:06d}.pth")
                 torch.save(ckpt_out, ckpt_path)
-                print(f" Saved checkpoint to {ckpt_path}")
+                print(f"💾 Saved checkpoint to {ckpt_path}")
 
         if step >= TOTAL_STEPS:
             break
 
     print("Done Stage-2 training.")
-
-
-if __name__ == "__main__":
-    main()
