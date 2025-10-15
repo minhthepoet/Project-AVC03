@@ -190,7 +190,9 @@ def train_step_stage2(
 
     input_ids = tokenize_captions(tokenizer, list(prompts)).to(device)
     text_emb  = text_encoder(input_ids)[0].to(dtype)
-    clip_pixels = img_processor(images=list(pil_imgs), return_tensors="pt")["pixel_values"].to(device, dtype=torch.float32)
+    if isinstance(pil_imgs, Image.Image):
+        pil_imgs = [pil_imgs]
+    clip_pixels = img_processor(images=pil_imgs, return_tensors="pt")["pixel_values"].to(device, dtype=torch.float32)
     img_feats   = img_encoder(clip_pixels).image_embeds  
     px_m11 = (px_01.to(device, dtype=torch.float32) * 2.0 - 1.0)  
     with torch.no_grad():
