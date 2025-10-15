@@ -36,6 +36,7 @@ parser.add_argument("--save_dir", type=str, default="checkpoints_stage2",
 
 parser.add_argument("--total_steps", type=int, default=20000)
 parser.add_argument("--batch_size", type=int, default=1)
+parser.add_argument("--resume_from", type=str, default=None, help="Path to a checkpoint to resume training")
 parser.add_argument("--lr", type=float, default=1e-5)
 parser.add_argument("--wd", type=float, default=1e-4)
 parser.add_argument("--lambda_perc", type=float, default=1.0)
@@ -43,8 +44,8 @@ parser.add_argument("--lambda_regu", type=float, default=1.0)
 parser.add_argument("--ema", type=float, default=0.999)
 parser.add_argument("--seed", type=int, default=1337)
 parser.add_argument("--dtype", type=str, default="bf16", choices=["bf16", "fp16", "fp32"])
-parser.add_argument("--log_every", type=int, default=50)
-parser.add_argument("--save_every", type=int, default=2000)
+parser.add_argument("--log_every", type=int, default = 10)
+parser.add_argument("--save_every", type=int, default=200)
 
 parser.add_argument("--finetune_ip", action="store_true", help="Also fine-tune ImageProjModel in stage-2")
 
@@ -251,6 +252,21 @@ def train_step_stage2(
     return float(L_total.detach()), float(L_perc.detach()), float(L_reg.detach())
 
 def main():
+    # Resume logic
+    start_step = 0
+    if args.resume_from is not None and os.path.exists(args.resume_from):
+        print(f"[🔁] Resuming from checkpoint: {args.resume_from}")
+        ckpt = torch.load(args.resume_from, map_location=DEVICE)
+        inverse_net.load_state_dict(ckpt["inverse_net"])
+        ema_net.load_state_dict(ckpt["inverse_net_ema"])
+        ip_adapter.load_state_dict(ckpt["ip_adapter"])
+        optimizer.load_state_dict(ckpt["optimizer"])
+        start_step = ckpt.get("step", 0)
+        print(f"Resumed training from step {start_step}")
+
+    # Main loop
+    t0 = time.time()
+    step = start_step
     set_seed(SEED)
     print("Loading FROZEN backbones ...")
     # student UNet (SBv2)
@@ -302,10 +318,15 @@ def main():
     perceptual = PerceptualLoss(DEVICE)
     for epoch in range(10**4):
         for batch in loader:
-            if step >= TOTAL_STEPS: break
+            if step >= TOTAL_STEPS:
+                break
+
             pil_imgs, px_01, prompts, _ = batch
             step += 1
 
+            # ===============================
+            # Forward + Backward pass
+            # ===============================
             L_total, L_perc, L_reg = train_step_stage2(
                 inverse_net, g_ip, ip_adapter,
                 teacher_unet, scheduler, vae_t,
@@ -313,21 +334,27 @@ def main():
                 img_encoder, img_processor,
                 pil_imgs, px_01, prompts,
                 optimizer,
-                perceptual,                     
-                lambda_perc=args.lambda_perc, lambda_regu=args.lambda_regu,
+                perceptual,
+                lambda_perc=args.lambda_perc, 
+                lambda_regu=args.lambda_regu,
                 device=DEVICE, dtype=DTYPE,
             )
 
-
-
+            # Update EMA weights
             update_ema(inverse_net, ema_net, EMA_DECAY)
 
+            # ===============================
+            # Logging
+            # ===============================
             if step % args.log_every == 0 or step == 1:
                 dt = time.time() - t0
                 print(f"[{step:06d}/{TOTAL_STEPS}] "
-                      f"L={L_total:.4f} (perc={L_perc:.4f}, reg={L_reg:.4f}) | {(dt/args.log_every):.3f}s/it")
+                    f"L={L_total:.4f} (perc={L_perc:.4f}, reg={L_reg:.4f}) | {(dt/args.log_every):.3f}s/it")
                 t0 = time.time()
 
+            # ===============================
+            # Save checkpoint
+            # ===============================
             if step % args.save_every == 0 or step == TOTAL_STEPS:
                 ckpt_out = {
                     "inverse_net": inverse_net.state_dict(),
@@ -336,13 +363,17 @@ def main():
                     "optimizer": optimizer.state_dict(),
                     "step": step,
                 }
-                out_path = os.path.join(SAVE_DIR, f"F_theta_stage2_step{step:06d}.pth")
-                torch.save(ckpt_out, out_path)
-                print(f"Saved checkpoint to {out_path}")
 
-        if step >= TOTAL_STEPS: break
+                os.makedirs(SAVE_DIR, exist_ok=True)
+                ckpt_path = os.path.join(SAVE_DIR, f"F_theta_stage2_step{step:06d}.pth")
+                torch.save(ckpt_out, ckpt_path)
+                print(f" Saved checkpoint to {ckpt_path}")
+
+        if step >= TOTAL_STEPS:
+            break
 
     print("Done Stage-2 training.")
+
 
 if __name__ == "__main__":
     main()
