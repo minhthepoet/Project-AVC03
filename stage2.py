@@ -1,9 +1,5 @@
 # SwiftEdit — Stage 2  (Real-image finetuning of F_theta)
 # By minhthepoet
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import argparse
 import os, json, time, random
 os.environ["DBG_SHAPES"] = "1"
