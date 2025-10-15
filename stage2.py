@@ -183,9 +183,11 @@ def train_step_stage2(
     px_01,     
     prompts,   
     optimizer,
+    perceptual,                 
     lambda_perc=1.0, lambda_regu=1.0,
     device="cuda", dtype=torch.float16
 ):
+
     from PIL import Image
 
     # --- determine batch size correctly ---
@@ -226,11 +228,18 @@ def train_step_stage2(
         x_hat = (x_hat + 1.0) / 2.0
 
     # --- losses ---
-    perc_loss = PerceptualLoss(device)(x_hat, px_01.to(device, dtype=torch.float32))
+    L_perc = perceptual(x_hat, px_01.to(device, dtype=torch.float32))
     L_regu, _ = stage2_regularizer(teacher_unet, scheduler, z_real, eps_hat, text_embeds=text_emb,
                                    tmin=200, tmax=800, device=device, dtype=None, use_w=True)
-    L_total, L_perc, L_reg = stage2_total_loss(lambda x,y: perc_loss, x_hat, px_01.to(device, dtype=torch.float32),
-                                               L_regu, lambda_perc=lambda_perc, lambda_regu=lambda_regu)
+    L_perc = perceptual(x_hat, px_01.to(device, dtype=torch.float32))
+    L_total, L_perc, L_reg = stage2_total_loss(
+        perceptual,                   
+        x_hat,
+        px_01.to(device, dtype=torch.float32),
+        L_regu,
+        lambda_perc=lambda_perc,
+        lambda_regu=lambda_regu
+    )
 
     optimizer.zero_grad(set_to_none=True)
     L_total.backward()
@@ -290,6 +299,7 @@ def main():
     print("--- Starting Stage-2 training ...")
     t0 = time.time()
     step = 0
+    perceptual = PerceptualLoss(DEVICE)
     for epoch in range(10**4):
         for batch in loader:
             if step >= TOTAL_STEPS: break
@@ -303,9 +313,12 @@ def main():
                 img_encoder, img_processor,
                 pil_imgs, px_01, prompts,
                 optimizer,
+                perceptual,                      # ✅ truyền đúng thứ tự
                 lambda_perc=args.lambda_perc, lambda_regu=args.lambda_regu,
-                device=DEVICE, dtype=DTYPE
+                device=DEVICE, dtype=DTYPE,
             )
+
+
 
             update_ema(inverse_net, ema_net, EMA_DECAY)
 
