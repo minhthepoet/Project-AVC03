@@ -227,29 +227,45 @@ def train_step_stage2(
         z_hat = g_ip.unet(eps_hat, t_full, encoder_hidden_states=cond).sample      # [B,4,64,64]
         x_hat = vae_teacher.decode((z_hat / VAE_SCALE).to(dtype=torch.float32)).sample.clamp(-1, 1)
         x_hat = (x_hat + 1.0) / 2.0
+    # --- Losses ---
+    # Perceptual reconstruction loss
+    L_perc = perceptual(x_hat, px_01.to(device, dtype=torch.float32))
 
-    # --- losses ---
-    L_perc = perceptual(x_hat, px_01.to(device, dtype=torch.float32))
-    L_regu, _ = stage2_regularizer(teacher_unet, scheduler, z_real, eps_hat, text_embeds=text_emb,
-                                   tmin=200, tmax=800, device=device, dtype=None, use_w=True)
-    L_perc = perceptual(x_hat, px_01.to(device, dtype=torch.float32))
+    # Regularization loss (SDS-style)
+    L_regu, eps_t = stage2_regularizer(
+        teacher_unet, scheduler, z_real, eps_hat,
+        text_embeds=text_emb,
+        tmin=200, tmax=800,
+        device=device, dtype=None, use_w=True,
+    )
+
+    # Total weighted loss
     L_total, L_perc, L_reg = stage2_total_loss(
-        perceptual,                   
+        perceptual,
         x_hat,
         px_01.to(device, dtype=torch.float32),
         L_regu,
         lambda_perc=lambda_perc,
-        lambda_regu=lambda_regu
+        lambda_regu=lambda_regu,
     )
-
+    # --- Backpropagation ---
     optimizer.zero_grad(set_to_none=True)
     L_total.backward()
+
+    # Clip gradients to avoid explosion
     torch.nn.utils.clip_grad_norm_(inverse_net.parameters(), 1.0)
     if any(p.requires_grad for p in ip_adapter.parameters()):
         torch.nn.utils.clip_grad_norm_(ip_adapter.parameters(), 1.0)
-    optimizer.step()
 
-    return float(L_total.detach()), float(L_perc.detach()), float(L_reg.detach())
+    optimizer.step()
+    # --- Extra metrics (for logging only) ---
+    with torch.no_grad():
+        cos = torch.nn.functional.cosine_similarity(
+            eps_hat.flatten(1), eps_t.flatten(1)
+        ).mean().item()
+    # --- Return losses as floats (safe for logging) ---
+    return L_total.item(), L_perc.item(), L_reg.item(), cos
+
 
 def main():
     # Resume logic
@@ -327,7 +343,7 @@ def main():
             # ===============================
             # Forward + Backward pass
             # ===============================
-            L_total, L_perc, L_reg = train_step_stage2(
+            L_total, L_perc, L_reg, cos = train_step_stage2(
                 inverse_net, g_ip, ip_adapter,
                 teacher_unet, scheduler, vae_t,
                 tokenizer, text_encoder,
@@ -343,13 +359,11 @@ def main():
             # Update EMA weights
             update_ema(inverse_net, ema_net, EMA_DECAY)
 
-            # ===============================
-            # Logging
-            # ===============================
+
             if step % args.log_every == 0 or step == 1:
                 dt = time.time() - t0
                 print(f"[{step:06d}/{TOTAL_STEPS}] "
-                    f"L={L_total:.4f} (perc={L_perc:.4f}, reg={L_reg:.4f}) | {(dt/args.log_every):.3f}s/it")
+                    f"L={L_total:.4f} (perc={L_perc:.4f}, reg={L_reg:.4f}, cos={cos:.3f}) | {(dt/args.log_every):.3f}s/it")
                 t0 = time.time()
 
             # ===============================
