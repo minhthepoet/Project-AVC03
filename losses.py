@@ -33,11 +33,20 @@ class PerceptualLoss(nn.Module):
                 print("[Perceptual] Using L1")
 
     def forward(self, x_hat, x_gt):
+        if x_hat.ndim == 3:
+            x_hat = x_hat.unsqueeze(0)
+        if x_gt.ndim == 3:
+            x_gt = x_gt.unsqueeze(0)
+        if x_hat.shape[1] == 1:
+            x_hat = x_hat.repeat(1, 3, 1, 1)
+        if x_gt.shape[1] == 1:
+            x_gt = x_gt.repeat(1, 3, 1, 1)
+        
         if self.mode == "DISTS":
             return self.metric(x_hat, x_gt)
         elif self.mode == "LPIPS":
             xh = x_hat * 2 - 1
-            xg = x_gt  * 2 - 1
+            xg = x_gt * 2 - 1
             return self.metric(xh, xg).mean()
         else:
             return self.metric(x_hat, x_gt)
