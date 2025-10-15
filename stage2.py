@@ -194,9 +194,12 @@ def train_step_stage2(
         pil_imgs = [pil_imgs]
     clip_pixels = img_processor(images=pil_imgs, return_tensors="pt")["pixel_values"].to(device, dtype=torch.float32)
     img_feats   = img_encoder(clip_pixels).image_embeds  
-    px_m11 = (px_01.to(device, dtype=torch.float32) * 2.0 - 1.0)  
+    px_m11 = (px_01.to(device, dtype=torch.float32) * 2.0 - 1.0)  # [-1,1]
+    if px_m11.ndim == 3:
+        px_m11 = px_m11.unsqueeze(0)  
     with torch.no_grad():
         z_real = vae_teacher.encode(px_m11).latent_dist.sample() * VAE_SCALE
+
     z_real = z_real.to(dtype)
 
     eps_hat = inverse_net(z_real, text_emb) 
