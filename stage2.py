@@ -188,10 +188,12 @@ def train_step_stage2(
 ):
     B = px_01.size(0)
 
-    input_ids = tokenize_captions(tokenizer, list(prompts)).to(device)
+    if isinstance(prompts, str):
+        prompts = [prompts]
+    input_ids = tokenize_captions(tokenizer, prompts).to(device)
     text_emb  = text_encoder(input_ids)[0].to(dtype)
-    print(inverse_net.unet_inverse.config.cross_attention_dim)
-    print(text_emb.shape)
+    # print(inverse_net.unet_inverse.config.cross_attention_dim)
+    # print(text_emb.shape)
     if isinstance(pil_imgs, Image.Image):
         pil_imgs = [pil_imgs]
     clip_pixels = img_processor(images=pil_imgs, return_tensors="pt")["pixel_values"].to(device, dtype=torch.float32)
