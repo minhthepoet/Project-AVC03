@@ -255,7 +255,7 @@ def main():
     # Resume logic
     start_step = 0
     if args.resume_from is not None and os.path.exists(args.resume_from):
-        print(f"[🔁] Resuming from checkpoint: {args.resume_from}")
+        print(f" Resuming from checkpoint: {args.resume_from}")
         ckpt = torch.load(args.resume_from, map_location=DEVICE)
         inverse_net.load_state_dict(ckpt["inverse_net"])
         ema_net.load_state_dict(ckpt["inverse_net_ema"])
