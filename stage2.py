@@ -313,7 +313,7 @@ def main():
                 img_encoder, img_processor,
                 pil_imgs, px_01, prompts,
                 optimizer,
-                perceptual,                      # ✅ truyền đúng thứ tự
+                perceptual,                     
                 lambda_perc=args.lambda_perc, lambda_regu=args.lambda_regu,
                 device=DEVICE, dtype=DTYPE,
             )

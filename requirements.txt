@@ -10,6 +10,7 @@ ftfy
 einops
 Pillow
 tqdm
+pyiqa>=0.1.6
 lpips>=0.1.4
 dists-pytorch>=0.1
 tensorboard

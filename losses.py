@@ -9,31 +9,39 @@ def stage1_loss(z, z_hat, eps, eps_hat, lambda_regr=1.0):
     L_total = L_rec + lambda_regr * L_regr
     return L_rec, L_regr, L_total
 
+# losses.py
 class PerceptualLoss(nn.Module):
     """Prefer DISTS, fallback LPIPS, else L1."""
     def __init__(self, device):
         super().__init__()
         self.mode = "L1"
+        self.device = device
         try:
-            from dists_pytorch import DISTS
-            self.impl = DISTS().to(device)
+            import pyiqa
+            self.metric = pyiqa.create_metric('dists', device=device)
             self.mode = "DISTS"
+            print("[Perceptual] Using DISTS")
         except Exception:
             try:
                 import lpips
-                self.impl = lpips.LPIPS(net='vgg').to(device)
+                self.metric = lpips.LPIPS(net='alex').to(device).eval()
                 self.mode = "LPIPS"
+                print("[Perceptual] Using LPIPS")
             except Exception:
-                self.impl = nn.L1Loss()
-        print(f"[Perceptual] Using {self.mode}")
+                self.metric = nn.L1Loss()
+                self.mode = "L1"
+                print("[Perceptual] Using L1")
 
-    def forward(self, x, y):
+    def forward(self, x_hat, x_gt):
         if self.mode == "DISTS":
-            return self.impl(x, y)
+            return self.metric(x_hat, x_gt)
         elif self.mode == "LPIPS":
-            return self.impl(x * 2 - 1, y * 2 - 1).mean()
+            xh = x_hat * 2 - 1
+            xg = x_gt  * 2 - 1
+            return self.metric(xh, xg).mean()
         else:
-            return self.impl(x, y)
+            return self.metric(x_hat, x_gt)
+
 
 
 
