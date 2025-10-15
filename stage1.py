@@ -171,19 +171,23 @@ def generate_synthetic_batch(
 def train_step(inverse_net, ip_model, g_ip, optimizer, batch, lambda_regr, device, dtype):
     z, eps, text_emb, img_feats, _ = batch
     t = torch.full((z.size(0),), 999, device=device, dtype=torch.long)
-    with torch.enable_grad():
-        eps_hat = inverse_net(z, text_emb)                       # should require grad
-        img_proj = ip_model(img_feats)                           # should require grad
-        cond = torch.cat([text_emb, img_proj], dim=1)
-        out = g_ip.unet(eps_hat, t, encoder_hidden_states=cond)  # teacher unet: params frozen nhưng vẫn truyền grad về eps_hat
-        z_hat = out.sample
 
-        L_rec, L_regr, L_total = stage1_loss(z, z_hat, eps, eps_hat, lambda_regr)
+    eps_hat = inverse_net(z, text_emb)               
+    img_proj = ip_model(img_feats)                   
+    cond = torch.cat([text_emb, img_proj], dim=1)
+
+    # Generator frozen (no grad for weights), but grad flows through output
+    out = g_ip.unet(eps_hat, t, encoder_hidden_states=cond)
+    z_hat = out.sample
+
+    L_rec, L_regr, L_total = stage1_loss(z, z_hat, eps, eps_hat, lambda_regr)
 
     optimizer.zero_grad(set_to_none=True)
     L_total.backward()
     optimizer.step()
+
     return L_rec.detach(), L_regr.detach(), L_total.detach()
+
 
 
 # Main training loop

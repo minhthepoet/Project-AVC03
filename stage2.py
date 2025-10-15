@@ -292,9 +292,6 @@ def main():
     ema_net.load_state_dict(inverse_net.state_dict(), strict=True)
     requires_grad(ema_net, False)
 
-    # =============================================================
-    # 2️⃣ Load checkpoint
-    # =============================================================
     start_step = 0
     if args.resume_from is not None and os.path.exists(args.resume_from):
         print(f"Resuming Stage-2 from checkpoint: {args.resume_from}")
