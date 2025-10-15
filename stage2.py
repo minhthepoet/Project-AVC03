@@ -223,10 +223,10 @@ def train_step_stage2(
     t_full = torch.full((z_real.size(0),), 999, device=device, dtype=torch.long)  # use true B
     img_proj = ip_adapter(img_feats)                                 # [B,4,1024]
     cond = torch.cat([text_emb, img_proj.to(dtype)], dim=1)          # [B,81,1024]
-    with torch.no_grad():
-        z_hat = g_ip.unet(eps_hat, t_full, encoder_hidden_states=cond).sample      # [B,4,64,64]
-        x_hat = vae_teacher.decode((z_hat / VAE_SCALE).to(dtype=torch.float32)).sample.clamp(-1, 1)
-        x_hat = (x_hat + 1.0) / 2.0
+    z_hat = g_ip.unet(eps_hat, t_full, encoder_hidden_states=cond).sample
+    x_hat = vae_teacher.decode((z_hat / VAE_SCALE).to(dtype=torch.float32)).sample
+    x_hat = x_hat.clamp(-1, 1)
+    x_hat = (x_hat + 1.0) / 2.0
     # --- Losses ---
     # Perceptual reconstruction loss
     L_perc = perceptual(x_hat, px_01.to(device, dtype=torch.float32))
@@ -319,7 +319,8 @@ def main():
 
     # Freeze non-trainables
     requires_grad(g_ip.unet, False)
-    requires_grad(ip_adapter, args.finetune_ip)
+    requires_grad(vae_t, False)           
+    requires_grad(ip_adapter, args.finetune_ip)  
 
     print("--- Starting Stage-2 training ---")
     # EMA smoothing vars
