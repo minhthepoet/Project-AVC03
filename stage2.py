@@ -186,34 +186,44 @@ def train_step_stage2(
     lambda_perc=1.0, lambda_regu=1.0,
     device="cuda", dtype=torch.float16
 ):
-    B = px_01.size(0)
+    from PIL import Image
 
+    # --- determine batch size correctly ---
+    B = 1 if px_01.ndim == 3 else px_01.size(0)
+
+    # --- text cond: ensure list[str] and batch B ---
     if isinstance(prompts, str):
         prompts = [prompts]
     input_ids = tokenize_captions(tokenizer, prompts).to(device)
     text_emb  = text_encoder(input_ids)[0].to(dtype)
-    # print(inverse_net.unet_inverse.config.cross_attention_dim)
-    # print(text_emb.shape)
+    if text_emb.shape[0] != B:
+        text_emb = text_emb[:1].repeat(B, 1, 1)   # keep safe if B==1
+
+    # --- image embeds (CLIP pooled): wrap PIL to list ---
     if isinstance(pil_imgs, Image.Image):
         pil_imgs = [pil_imgs]
     clip_pixels = img_processor(images=pil_imgs, return_tensors="pt")["pixel_values"].to(device, dtype=torch.float32)
-    img_feats = img_encoder(clip_pixels).image_embeds.to(dtype)
-    px_m11 = (px_01.to(device, dtype=torch.float32) * 2.0 - 1.0)  # [-1,1]
-    if px_m11.ndim == 3:
-        px_m11 = px_m11.unsqueeze(0)  
+    img_feats   = img_encoder(clip_pixels).image_embeds.to(dtype)  # match ip_adapter dtype
+
+    # --- encode real images to latent z_real ---
+    px_m11 = px_01.to(device, dtype=torch.float32) * 2.0 - 1.0      # [-1,1]
+    if px_m11.ndim == 3:                                            # add batch dim if missing
+        px_m11 = px_m11.unsqueeze(0)
     with torch.no_grad():
         z_real = vae_teacher.encode(px_m11).latent_dist.sample() * VAE_SCALE
+    z_real = z_real.to(dtype)                                       # [B,4,64,64]
 
-    z_real = z_real.to(dtype)
+    # --- forward F_theta to get eps_hat ---
+    eps_hat = inverse_net(z_real, text_emb)                         # [B,4,64,64]
 
-    eps_hat = inverse_net(z_real, text_emb) 
-    t_full = torch.full((B,), 999, device=device, dtype=torch.long)
-    img_proj = ip_adapter(img_feats)  # [B,4,1024]
-    cond = torch.cat([text_emb, img_proj.to(dtype)], dim=1)  # [B,81,1024]
+    # --- reconstruction via frozen SBv2 (+IP tokens) ---
+    t_full = torch.full((z_real.size(0),), 999, device=device, dtype=torch.long)  # use true B
+    img_proj = ip_adapter(img_feats)                                 # [B,4,1024]
+    cond = torch.cat([text_emb, img_proj.to(dtype)], dim=1)          # [B,81,1024]
     with torch.no_grad():
-        z_hat = g_ip.unet(eps_hat, t_full, encoder_hidden_states=cond).sample  # [B,4,64,64]
+        z_hat = g_ip.unet(eps_hat, t_full, encoder_hidden_states=cond).sample      # [B,4,64,64]
         x_hat = vae_teacher.decode((z_hat / VAE_SCALE).to(dtype=torch.float32)).sample.clamp(-1, 1)
-        x_hat = (x_hat + 1.0) / 2.0  # [0,1]
+        x_hat = (x_hat + 1.0) / 2.0
 
     # --- losses ---
     perc_loss = PerceptualLoss(device)(x_hat, px_01.to(device, dtype=torch.float32))
