@@ -316,6 +316,7 @@ def main():
     # Data + perceptual loss
     loader = make_loader(args.data_list, BATCH_SIZE)
     perceptual = PerceptualLoss(DEVICE)
+    perceptual.eval()
 
     # Freeze non-trainables
     requires_grad(g_ip.unet, False)
