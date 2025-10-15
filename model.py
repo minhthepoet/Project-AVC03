@@ -1,3 +1,4 @@
+#model by minhthepoet reference from Qualcom 
 import torch
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from PIL import Image
