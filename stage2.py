@@ -190,6 +190,8 @@ def train_step_stage2(
 
     input_ids = tokenize_captions(tokenizer, list(prompts)).to(device)
     text_emb  = text_encoder(input_ids)[0].to(dtype)
+    print(inverse_net.unet_inverse.config.cross_attention_dim)
+    print(text_emb.shape)
     if isinstance(pil_imgs, Image.Image):
         pil_imgs = [pil_imgs]
     clip_pixels = img_processor(images=pil_imgs, return_tensors="pt")["pixel_values"].to(device, dtype=torch.float32)
@@ -229,7 +231,6 @@ def train_step_stage2(
 
 def main():
     set_seed(SEED)
-
     print("Loading FROZEN backbones ...")
     # student UNet (SBv2)
     unet_base = load_sbv2_unet(SBV2_DIR, DEVICE, DTYPE)
