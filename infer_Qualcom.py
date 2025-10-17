@@ -110,4 +110,4 @@ if __name__ == "__main__":
     start_time = time.time()
     result = edit_image(img_path, src_p, edit_p, inverse_model, aux_model, ip_sb_model)
     print(f"Edit {src_p}->{edit_p} in {time.time()-start_time}")
-    save_image(result, f"result_{src_p}->{edit_p}.png")
+    save_image(result, f"/content/drive/MyDrive/Project_AVC03/Data_out/{src_p}->{edit_p}.png")
